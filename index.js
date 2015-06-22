@@ -2,12 +2,15 @@ var google = require('googleapis');
 var OAuth2 = google.auth.OAuth2;
 var oauth2Client = new OAuth2(process.env['GOOGLE_CLIENT'], process.env['GOOGLE_SECRET'], process.env['GOOGLE_URI']);
 var auth = require('googleauth');
+var gmail = google.gmail({version: 'v1', auth: oauth2Client});
+var chalk = require('chalk');
+
 var atob = require('atob');
 var btoa = require('btoa');
+
 "use strict";
 var inquirer = require("inquirer");
 
-var gmail = google.gmail({version: 'v1', auth: oauth2Client});
 
 var object = {};
 var inboxId = [];
@@ -16,11 +19,15 @@ var writeEmail = [];
 var recipient = '';
 var emailSubject = '';
 var emailMessage = '';
-var deleteId;
 var btoaEmail;
+var emailComfirmation;
+var maxResults = 5;
+var deletedEmailId = [];
+var readEmailId = [];
+var replyEmailId = [];
 
 var googleAPI = function () {
-  auth({
+  var test = auth({
     configName: 'googleauth',
     client_id: process.env['GOOGLE_CLIENT'],
     client_secret: process.env['GOOGLE_SECRET'],
@@ -34,259 +41,159 @@ var googleAPI = function () {
       oauth2Client.setCredentials({
         access_token: authData.access_token,
         refresh_token: authData.refresh_token
-      });
-      runEverything(oauth2Client);
+      })
+      getInbox();
     }
   })
-}
-var runEverything = function (oauth2Client) {
-
-  // INBOX
-  // RETRIEVES INBOX SUBJECTS
-  function inbox () {
-    gmail.users.messages.list({
-      userId: 'me',
-      labelId: 'INBOX',
-      maxResults: 1,
-      includeSpamTrash: false
-    }, function (err, req) {
-      for(var i = 0; i < 1; i++) {
-        inboxId.push(req.messages[i].id);
-      }
-      inboxId.forEach(function(elem, i) {
-        gmail.users.messages.get({
-          userId: 'me',
-          id: elem
-        }, function (err, req) {
-          if (err) {
-            console.log(err);
-          } else {
-            object[i] = {id: req.id, subject: req.payload.headers.filter( function(header) {
-              return header.name === 'Subject';
-            })[0].value, threadId: req.threadId, from: req.payload.headers.filter(function(header) {
-              return header.name === 'From';
-            })[0].value, to: req.payload.headers.filter(function(header) {
-              return header.name === 'To';
-            })[0].value, body: atob(req.payload.body.data)}
-          }
-          // if (req.payload.parts === undefined) {
-
-            // , threadId: req.threadId, from: req.payload.headers.filter(function(header) {
-            //   return header.name === 'From';
-            // })[0].value, to: req.payload.headers.filter(function(header) {
-            //   return header.name === 'To';
-            // })[0].value}
-            // body: atob(req.payload.body.data)}
-
-          // };
-          // else {
-          //   object[i] = {id: req.id, subject: req.payload.headers.filter( function(header) {
-          //     return header.name === 'Subject';
-          //   })[0].value, threadId: req.threadId, from: req.payload.headers.filter(function(header) {
-          //     return header.name === 'From';
-          //   })[0].value, to: req.payload.headers.filter(function(header) {
-          //     return header.name === 'To';
-          //   })[0].value, body: atob(req.payload.parts[0].body.data)}
-          // };
-        })
-      });
-    });
-  };
-  inbox();
 }
 
 googleAPI();
 
-// var body = function (value) {
-//   emailId = object[parseInt(value)];
-//   console.log('Subject: ' + emailId.subject + '\n');
-//   console.log('From: ' + emailId.from + '\n');
-//   console.log('To: ' + emailId.to + '\n');
-//   console.log(emailId.body);
-// };
+// INBOX
+// RETRIEVES INBOX SUBJECTS
 
-// // BODY OF EMAIL
-// var body = function(answer) {
-//   gmail.users.messages.get({userId: 'me', 'id': emailId}, function(err, req) {
-//     var subject = req.payload.headers.filter(function(header) {
-//       return header.name === 'Subject';
-//     })[0].value;
-//     var fromPerson = req.payload.headers.filter(function(header) {
-//       return header.name === 'From';
-//     })[0].value;
-//     var toPerson = req.payload.headers.filter(function(header) {
-//       return header.name === 'To';
-//     })[0].value;
-//
-//     if (req.payload.parts === undefined) {
-//       var emailBody = atob(req.payload.body.data);
-//     } else {
-//       var emailBody = atob(req.payload.parts[0].body.data);
-//     };
-//     console.log('Subject: ' + subject + '\n');
-//     console.log('From: ' + fromPerson + '\n');
-//     console.log('To: ' + toPerson + '\n');
-//   });
-// };
+var getInbox = function () {
+  gmail.users.messages.list({
+    userId: 'me',
+    labelId: 'INBOX',
+    maxResults: maxResults,
+    includeSpamTrash: false,
+    q: "is:unread"
+  }, function (err, req) {
+    for(var i = 0; i < maxResults; i++) {
+      if (inboxId.length < maxResults) {
+        inboxId.push(req.messages[i].id);
+      }
+    }
+    getEmails(inboxId)
+  });
+};
+
+var getEmails = function(inboxId) {
+    inboxId.forEach(function(elem, i) {
+      gmail.users.messages.get({
+        userId: 'me',
+        id: elem
+      }, function (err, req) {
+        if(req.payload.body.data === undefined) {
+          object[i] = {id: req.id, subject: req.payload.headers.filter( function(header) {
+            return header.name === 'Subject';
+          })[0].value, threadId: req.threadId, from: req.payload.headers.filter(function(header) {
+            return header.name === 'From';
+          })[0].value, to: req.payload.headers.filter(function(header) {
+            return header.name === 'To';
+          })[0].value, body: atob(req.payload.parts[0].body.data)}
+        } else {
+          object[i] = {id: req.id, subject: req.payload.headers.filter( function(header) {
+            return header.name === 'Subject';
+          })[0].value, threadId: req.threadId, from: req.payload.headers.filter(function(header) {
+            return header.name === 'From';
+          })[0].value, to: req.payload.headers.filter(function(header) {
+            return header.name === 'To';
+          })[0].value, body: atob(req.payload.body.data)}
+        };
+      if (Object.keys(object).length === maxResults ) {
+        ask();
+      };
+      })
+    });
+};
+
+var refreshInbox = function () {
+  gmail.users.messages.list({
+    userId: 'me',
+    labelId: 'INBOX',
+    maxResults: maxResults,
+    includeSpamTrash: false,
+    q: "is:unread"
+  }, function (err, req) {
+    for(var i = 0; i < maxResults; i++) {
+      if (inboxId.length < maxResults) {
+        inboxId.push(req.messages[i].id);
+      }
+    }
+    refreshEmail(inboxId)
+  });
+};
+
+var refreshEmail = function(inboxId) {
+  if(Object.keys(object).length === 0) {
+    inboxId.forEach(function(elem, i) {
+      gmail.users.messages.get({
+        userId: 'me',
+        id: elem
+      }, function (err, req) {
+        if(req.payload.body.data === undefined) {
+          object[i] = {id: req.id, subject: req.payload.headers.filter( function(header) {
+            return header.name === 'Subject';
+          })[0].value, threadId: req.threadId, from: req.payload.headers.filter(function(header) {
+            return header.name === 'From';
+          })[0].value, to: req.payload.headers.filter(function(header) {
+            return header.name === 'To';
+          })[0].value, body: atob(req.payload.parts[0].body.data)}
+        } else {
+          object[i] = {id: req.id, subject: req.payload.headers.filter( function(header) {
+            return header.name === 'Subject';
+          })[0].value, threadId: req.threadId, from: req.payload.headers.filter(function(header) {
+            return header.name === 'From';
+          })[0].value, to: req.payload.headers.filter(function(header) {
+            return header.name === 'To';
+          })[0].value, body: atob(req.payload.body.data)}
+        };
+      })
+    });
+  }
+};
+
+var ask = function () {
+  inquirer.prompt( questions, function( answers ) {
+    if (answers.nextStep === "Inbox" || answers.deleteEmail || answers.nextStepAfterComposing === "Inbox" || answers.nextStepAfterReplying === "Inbox")  {
+        ask();
+    } else {
+      console.log( "\n\nGoodbye!\n\n" );
+    }
+  });
+}
 
 //  SEND AN EMAIL
 var sendEmail = function (email) {
   gmail.users.messages.send({
-    'userId': "me",
-    'resource': {
-      'raw': email
+    userId: "me",
+    resource: {
+      raw: email
     }
-  }, function(err) {
+  }, function(err, res) {
     if(err) {
-      console.log(err);
+      sendEmail(email);
     }
   });
 };
-//
+
 // DELETE AN EMAIL
 var deleteEmail = function (id) {
-  gmail.users.messages.trash({userId: 'me', 'id': id }, function (err, resp) {
+  gmail.users.messages.trash({userId: 'me', 'id': id }, function (err, res) {
     if (err) {
-      console.log(err);
+      deleteEmail(id);
     }
   });
 }
-//
-// // // gmail.users.messages.list({
-// // //   userId: 'me',
-// // //   maxResults: 10
-// // // }, function (err, res) {
-// // //   console.log(res);
-// // // })
-//
+
+// CHANGE EMAIL TO READ
+var readEmail = function(id) {
+  gmail.users.messages.modify({
+    userId: 'me',
+    'id': id,
+    resource: {
+      removeLabelIds: ["UNREAD"]
+}}, function (err, res) {
+    if (err) {
+      readEmail(id);
+    }
+  })
+}
+
 console.log('~~~~~~~~~~WELCOME TO GMAIL~~~~~~~~~~\n\n')
-// //
-// // // var questions = [
-// // //   {
-// // //     type: "list",
-// // //     name: "gmail",
-// // //     message: "What would you like to do?",
-// // //     choices: ["Inbox", "Compose", "Log Out"],
-// // //     filter: function(value) {
-// // //       var done = this.async();
-// // //       setTimeout(function() {
-// // //         if(value === 'Inbox') {
-// // //           console.log("\nInbox\n");
-// // //           for(var i = 0; i < 1; i ++) {
-// // //             console.log(i + ' -- ' + 'FROM: ' + object[i].from + "  " + object[i].subject);
-// // //           };
-// // //           console.log("\n\n");
-// // //         }
-// // //         done(value.toLowerCase());
-// // //       }, 5000);
-// // //     }
-// // //   },
-// // //   {
-// // //     type: "input",
-// // //     name: "inboxNumber",
-// // //     message: "What would you like to open?    # = READ",
-// // //     // choices: ["0","1","2","3","4"],
-// // //     when: function(value) {
-// // //       return value.gmail === "inbox";
-// // //     },
-// //     // validate: function(value) {
-// //     //  var valid = !isNaN(parseFloat(value));
-// //     //  return valid || "Please enter a number";
-// //     // },
-// //     // filter: function(value) {
-// //     //   return parseInt(value) || value;
-// //     // }
-// // //   },
-// // //   {
-// // //     type: "input",
-// // //     name: "recipient",
-// // //     message: "Compose An Email To:",
-// // //     when: function(value) {
-// // //       return value.gmail === "compose";
-// // //     },
-// //     // filter: function(value) {
-// //     //   recipient = value;
-// //     //   return value;
-// //     // }
-// // //   },
-// // //   {
-// // //     type: "input",
-// // //     name: "emailSubject",
-// // //     message: "Email Subject:",
-// // //     when: function(value) {
-// // //       return value.recipient;
-// // //     },
-// //     // filter: function(value) {
-// //     //   emailSubject = value;
-// //     //   return value;
-// //     // }
-// // //   },
-// // //   {
-// // //     type: "input",
-// // //     name: "emailMessage",
-// // //     message: "Write your email:",
-// // //     when: function(value) {
-// // //       return value.emailSubject;
-// // //     },
-// //     // filter: function(value) {
-// //     //   emailMessage = value;
-// //     //   return value;
-// //     // }
-// // //   },
-// // //   {
-// // //     type: "list",
-// // //     name: "sendMessage",
-// // //     message: "Look good, ready to send?",
-// // //     choices: ["Send", "Trash"],
-// // //     when: function(value) {
-// //       // console.log("From: me\r\nTo:" + recipient + "\r\nSubject:"+ emailSubject + "\r\n\r\n" + emailMessage);
-// // //       return value.emailMessage;
-// // //     }
-// // //   },
-// // //   {
-// // //     type: "list",
-// // //     name: "gmail",
-// // //     message: "What would you like to do?",
-// // //     choices: ["Inbox", "Compose", "Log Out"],
-// // //     when: function(value) {
-// // //       if(value.sendMessage === "Send") {
-// //         // sendEmail(btoa("From: me\r\nTo:" + recipient + "\r\nSubject:"+ emailSubject + "\r\n\r\n" + emailMessage).replace(/\+/g, '-').replace(/\//g, '_'));
-// // //       }
-// // //       return value.sendMessage;
-// // //     }
-// // //   },
-// // //   {
-// // //     type: "list",
-// // //     name: "nextStep",
-// // //     message: "What would you like to do now?",
-// // //     choices: ["Inbox", "Reply", "Delete", "Log Out"],
-// // //     when: function(value) {
-// // //       deleteId = value.inboxNumber;
-// // //       if(deleteId === Number(value.inboxNumber))
-// //       // console.log('\nSubject: ' + object[parseInt(value.inboxNumber)].subject + '\n');
-// //       // console.log('From: ' + object[parseInt(value.inboxNumber)].from + '\n');
-// //       // console.log('To: ' + object[parseInt(value.inboxNumber)].to + '\n');
-// //       // console.log(object[parseInt(value.inboxNumber)].body + '\n');
-// // //       return value.inboxNumber;
-// // //     },
-// // //     filter: function(value, answer) {
-// // //       var done = this.async();
-// // //       setTimeout(function() {
-// // //         if(value === 'Inbox') {
-// // //           console.log("\nInbox\n");
-// // //           for(var i = 0; i < 5; i ++) {
-// // //             console.log(i + ' -- ' + 'FROM: ' + object[i].from + "  " + object[i].subject);
-// // //           };
-// // //           console.log("\n\n");
-// // //         } else if (value === 'Delete') {
-// // //           deleteEmail(object[deleteId].id);
-// // //         }
-// // //         done(value.toLowerCase());
-// // //       }, 500);
-// // //     }
-// // //   }
-// // // ];
-// //
+
 var questions = [
   {
     type: "list",
@@ -294,17 +201,21 @@ var questions = [
     message: "Welcome to your inbox, what would you like to do?",
     choices: ["Read Mail", "Compose", "Log Out"],
     filter: function(value) {
-      var done = this.async();
-      setTimeout(function() {
-        if(value === "Read Mail") {
-          console.log("\nInbox\n");
-          for(var i = 0; i < 1; i++) {
+      if(value === "Read Mail") {
+        console.log("\nInbox\n\n" + chalk.white.bgRed.bold("Deleted") + "   " + chalk.blue("Read") + "   " + chalk.yellow("Replied") + "\n");
+        for(var i = 0; i < maxResults; i++) {
+          if(deletedEmailId.indexOf(object[i]) !== -1) {
+            console.log(chalk.white.bgRed.bold(i + ' -- ' + 'FROM: ' + object[i].from + "  " + object[i].subject));
+          } else if (readEmailId.indexOf(object[i]) !== -1) {
+            console.log(chalk.blue(i + ' -- ' + 'FROM: ' + object[i].from + "  " + object[i].subject));
+          } else if (replyEmailId.indexOf(object[i]) !== -1) {
+            console.log(chalk.yellow(i + ' -- ' + 'FROM: ' + object[i].from + "  " + object[i].subject));
+          } else {
             console.log(i + ' -- ' + 'FROM: ' + object[i].from + "  " + object[i].subject);
           }
-          console.log("\n");
-        };
-        done(value.toLowerCase());
-      },4000)
+        }
+      };
+      return value.toLowerCase();
     }
   },
   {
@@ -319,6 +230,31 @@ var questions = [
     validate: function(value) {
       var valid = !isNaN(parseInt(value));
       return valid || "Please enter a number";
+    },
+    filter: function(value) {
+      readEmail(object[value].id);
+      if(readEmailId.indexOf(object[value]) === -1) {
+        readEmailId.push(object[value]);
+      }
+      return value;
+    }
+  },
+  {
+    type: "list",
+    name: "nextStep",
+    message: "What would you like to do now?",
+    choices: ["Inbox", "Reply", "Delete", "Log Out"],
+    when: function(answer) {
+      if (answer.inboxNumber) {
+        if(typeof parseInt(answer.inboxNumber) == "number"  || 0) {
+          console.log('\nSubject: ' + object[answer.inboxNumber].subject + '\n');
+          console.log('From: ' + object[answer.inboxNumber].from + '\n');
+          console.log('To: ' + object[answer.inboxNumber].to + '\n');
+          console.log(object[answer.inboxNumber].body + '\n');
+        }
+        emailId = parseInt(answer.inboxNumber);
+        return answer.inboxNumber;
+      }
     },
     filter: function(value) {
       return value;
@@ -356,7 +292,7 @@ var questions = [
       return answer.emailSubject;
     },
     filter: function(value) {
-      emailMessage = value + "\n\n\nSent from my Gmail Command Line App";
+      emailMessage = value + "\n\nSteve\n\n\nSent from my Gmail Command Line App";
       return value;
     }
   },
@@ -366,31 +302,17 @@ var questions = [
     message: "Look good, ready to send?",
     choices: ["Send", "Trash"],
     when: function(answer) {
-      console.log("From: me\r\nTo:" + recipient + "\r\nSubject:"+ emailSubject + "\r\n\r\n" + emailMessage);
-      btoaEmail = btoa("From: me\r\nTo:" + recipient + "\r\nSubject:"+ emailSubject + "\r\n\r\n" + emailMessage);
-      return answer.emailMessage;
+      if(answer.emailMessage) {
+        console.log("From: me\r\nTo:" + recipient + "\r\nSubject:"+ emailSubject + "\r\n\r\n" + emailMessage);
+        btoaEmail = btoa("From: me\r\nTo:" + recipient + "\r\nSubject:"+ emailSubject + "\r\n\r\n" + emailMessage).replace(/\//g,'_').replace(/\+/g,'-');
+        return answer.emailMessage;
+      }
     },
     filter: function(value) {
       if(value === "Send") {
         sendEmail(btoaEmail);
       }
       return value;
-    }
-  },
-  {
-    type: "list",
-    name: "nextStep",
-    message: "What would you like to do now?",
-    choices: ["Inbox", "Reply", "Delete", "Log Out"],
-    when: function(answer) {
-      emailId = parseInt(answer.inboxNumber);
-      if(typeof parseInt(answer.inboxNumber) == "number") {
-        console.log('\nSubject: ' + object[answer.inboxNumber].subject + '\n');
-        console.log('From: ' + object[answer.inboxNumber].from + '\n');
-        console.log('To: ' + object[answer.inboxNumber].to + '\n');
-        console.log(object[answer.inboxNumber].body + '\n');
-      }
-      return answer.inboxNumber;
     }
   },
   {
@@ -402,27 +324,11 @@ var questions = [
       return answer.nextStep === "Delete";
     },
     filter: function(value) {
-      var done = this.async();
-      if(value === "Yes") {
-        deleteEmail(object[emailId].id);
-      }
-      setTimeout(function() {
-        done(value);
-      },5000)
+      deletedEmailId.push(object[emailId]);
+      deleteEmail(object[emailId].id);
+      return value;
     }
   },
-  // {
-  //   type: "input",
-  //   name: "replySubject",
-  //   message: "Reply Subject:",
-  //   when: function(answer) {
-  //     return answer.nextStep === "Reply";
-  //   },
-  //   filter: function(value) {
-  //     emailSubject = value;
-  //     return value;
-  //   }
-  // },
   {
     type: "input",
     name: "replyMessage",
@@ -431,37 +337,48 @@ var questions = [
       return answer.nextStep === "Reply"
     },
     filter: function(value) {
-      emailMessage = value + "\n\n\nSent from my Gmail Command Line App";
+      emailMessage = value + "\n\nSteve\n\n\nSent from my Gmail Command Line App";
       return value;
     }
   },
   {
     type: "list",
-    name: "sendReplyMessage",
+    name: "sendReply",
     message: "Look good, ready to send?",
     choices: ["Send", "Trash"],
     when: function(answer) {
-      console.log("From: me\r\nTo: " + object[emailId].from + "\r\nSubject: Re: "+ object[emailId].subject + "\r\n\r\n" + emailMessage);
-      btoaEmail = btoa("From: me\r\nTo: " + object[emailId].from + "\r\nSubject: Re: "+ object[emailId].subject + "\r\n\r\n" + emailMessage);
-      return answer.replyMessage;
+      if(answer.replyMessage) {
+        console.log("From: me\r\nTo:" + object[emailId].from + "\r\nSubject: Re:"+ object[emailId].subject + "\r\n\r\n" + emailMessage);
+        btoaEmail = btoa("From: me\r\nTo:" + object[emailId].from + "\r\nSubject: Re:"+ object[emailId].subject + "\r\n\r\n" + emailMessage).replace(/\//g,'_').replace(/\+/g,'-');
+        return answer.replyMessage;
+      }
     },
     filter: function(value) {
       if(value === "Send") {
         sendEmail(btoaEmail);
+        var test = readEmailId.indexOf(object[emailId]);
+        readEmailId.splice(test, 1);
+        replyEmailId.push(object[emailId]);
       }
       return value;
     }
+  },
+  {
+    type: "list",
+    name: "nextStepAfterComposing",
+    message: "What would you like to do now?",
+    choices: ["Inbox", "Log Out"],
+    when: function(answer) {
+      return answer.sendMessage;
+    }
+  },
+  {
+    type: "list",
+    name: "nextStepAfterReplying",
+    message: "What would you like to do now?",
+    choices: ["Inbox", "Log Out"],
+    when: function(answer) {
+      return answer.sendReply;
+    }
   }
 ];
-
-function ask() {
-  inquirer.prompt( questions, function( answers ) {
-    if (answers.sendReplyMessage || answers.nextStep === "Inbox" || answers.deleteEmail === "Yes" || answers.sendMessage) {
-      ask();
-    } else {
-      console.log( "May you be happy!" );
-    }
-  });
-}
-
-ask();
