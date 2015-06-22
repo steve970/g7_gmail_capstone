@@ -11,6 +11,7 @@
   "dependencies": {
     "atob": "^1.1.2",
     "btoa": "^1.1.2",
+    "chalk": "^1.0.0",
     "googleapis": "^2.0.5",
     "googleauth": "^3.0.2",
     "inquirer": "^0.8.5"
