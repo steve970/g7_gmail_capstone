@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 var google = require('googleapis');
 var OAuth2 = google.auth.OAuth2;
 var oauth2Client = new OAuth2(process.env['GOOGLE_CLIENT'], process.env['GOOGLE_SECRET'], process.env['GOOGLE_URI']);
@@ -8,9 +10,7 @@ var chalk = require('chalk');
 var atob = require('atob');
 var btoa = require('btoa');
 
-"use strict";
 var inquirer = require("inquirer");
-
 
 var object = {};
 var inboxId = [];
@@ -26,6 +26,7 @@ var deletedEmailId = [];
 var readEmailId = [];
 var replyEmailId = [];
 
+// OAUTH TOKEN EXCHANGE
 var googleAPI = function () {
   var test = auth({
     configName: 'googleauth',
@@ -47,11 +48,11 @@ var googleAPI = function () {
   })
 }
 
+// INVOKES RIGHT AT THE BEGINNING
 googleAPI();
 
 // INBOX
-// RETRIEVES INBOX SUBJECTS
-
+// RETRIEVES INBOX IDS - GMAIL API GET REQUEST
 var getInbox = function () {
   gmail.users.messages.list({
     userId: 'me',
@@ -65,10 +66,11 @@ var getInbox = function () {
         inboxId.push(req.messages[i].id);
       }
     }
-    getEmails(inboxId)
+    getEmails(inboxId) //Invoked after inboxId array is equal to maxResults variable
   });
 };
 
+// RETRIEVES INDIVIDUAL EMAILS AND CREATES AN OBJECT - GMAIL API GET REQUEST
 var getEmails = function(inboxId) {
     inboxId.forEach(function(elem, i) {
       gmail.users.messages.get({
@@ -93,58 +95,13 @@ var getEmails = function(inboxId) {
           })[0].value, body: atob(req.payload.body.data)}
         };
       if (Object.keys(object).length === maxResults ) {
-        ask();
+        ask(); // Uses counter to invoke script once object is created matching the number of maxResults
       };
       })
     });
 };
 
-var refreshInbox = function () {
-  gmail.users.messages.list({
-    userId: 'me',
-    labelId: 'INBOX',
-    maxResults: maxResults,
-    includeSpamTrash: false,
-    q: "is:unread"
-  }, function (err, req) {
-    for(var i = 0; i < maxResults; i++) {
-      if (inboxId.length < maxResults) {
-        inboxId.push(req.messages[i].id);
-      }
-    }
-    refreshEmail(inboxId)
-  });
-};
-
-var refreshEmail = function(inboxId) {
-  if(Object.keys(object).length === 0) {
-    inboxId.forEach(function(elem, i) {
-      gmail.users.messages.get({
-        userId: 'me',
-        id: elem
-      }, function (err, req) {
-        if(req.payload.body.data === undefined) {
-          object[i] = {id: req.id, subject: req.payload.headers.filter( function(header) {
-            return header.name === 'Subject';
-          })[0].value, threadId: req.threadId, from: req.payload.headers.filter(function(header) {
-            return header.name === 'From';
-          })[0].value, to: req.payload.headers.filter(function(header) {
-            return header.name === 'To';
-          })[0].value, body: atob(req.payload.parts[0].body.data)}
-        } else {
-          object[i] = {id: req.id, subject: req.payload.headers.filter( function(header) {
-            return header.name === 'Subject';
-          })[0].value, threadId: req.threadId, from: req.payload.headers.filter(function(header) {
-            return header.name === 'From';
-          })[0].value, to: req.payload.headers.filter(function(header) {
-            return header.name === 'To';
-          })[0].value, body: atob(req.payload.body.data)}
-        };
-      })
-    });
-  }
-};
-
+// INVOKES THE COMMAND LINE SCRIPT
 var ask = function () {
   inquirer.prompt( questions, function( answers ) {
     if (answers.nextStep === "Inbox" || answers.deleteEmail || answers.nextStepAfterComposing === "Inbox" || answers.nextStepAfterReplying === "Inbox")  {
@@ -155,7 +112,7 @@ var ask = function () {
   });
 }
 
-//  SEND AN EMAIL
+//  SEND AN EMAIL - GMAIL API POST REQUEST
 var sendEmail = function (email) {
   gmail.users.messages.send({
     userId: "me",
@@ -169,7 +126,7 @@ var sendEmail = function (email) {
   });
 };
 
-// DELETE AN EMAIL
+// DELETE AN EMAIL - GMAIL API POST REQUEST
 var deleteEmail = function (id) {
   gmail.users.messages.trash({userId: 'me', 'id': id }, function (err, res) {
     if (err) {
@@ -178,7 +135,7 @@ var deleteEmail = function (id) {
   });
 }
 
-// CHANGE EMAIL TO READ
+// CHANGE EMAIL TO READ - GMAIL API POST REQUEST
 var readEmail = function(id) {
   gmail.users.messages.modify({
     userId: 'me',
@@ -194,6 +151,7 @@ var readEmail = function(id) {
 
 console.log('~~~~~~~~~~WELCOME TO GMAIL~~~~~~~~~~\n\n')
 
+// QUESTIONS ARRAY USED IN THE ASK FUNCTION
 var questions = [
   {
     type: "list",

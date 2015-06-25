@@ -1,8 +1,11 @@
 {
-  "name": "gmail_capstone",
-  "version": "1.0.0",
+  "name": "gmail_cli",
+  "version": "1.0.6",
   "description": "Gmail Command Line App",
-  "main": "index.js",
+  "bin": {
+    "gmail": "./gmail.js"
+  },
+  "main": "gmail.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -15,5 +18,6 @@
     "googleapis": "^2.0.5",
     "googleauth": "^3.0.2",
     "inquirer": "^0.8.5"
-  }
+  },
+  "homepage": "https://github.com/steve970/g7_gmail_capstone"
 }
