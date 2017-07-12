@@ -1,13 +1,12 @@
 {
   "name": "gmail_cli",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Gmail Command Line App",
   "bin": {
     "gmail": "./gmail.js"
   },
   "main": "gmail.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Steve Hirschhorn",
   "license": "ISC",

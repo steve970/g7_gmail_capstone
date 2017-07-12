@@ -10,6 +10,4 @@ Read your email, send and respond with basic emails and delete emails all withou
 npm install gmail_cli -g
 ```
 
-* Log onto the Google Developers Console and create environment variables for your Gmail API client_id and client_secret.
-
-* Finally, run gmail to begin and follow the script.
+* Start program by typing: gmail
