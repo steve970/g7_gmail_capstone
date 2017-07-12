@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 const fs = require('fs');
 const readline = require('readline');
 const google = require('googleapis');
@@ -199,11 +201,14 @@ function storeToken(token) {
             return header.name === 'To';
           })[0].value, body: atob(response.payload.body.data)}
         };
-      if (Object.keys(emailData).length === maxResults ) {
-        // console.log(emailData)
-        ask(); // Uses counter to invoke script once emailData is created matching the number of maxResults
-      };
-      })
+        if (err) {
+          throw(err);
+        } else {
+          if (Object.keys(emailData).length === maxResults ) {
+            ask(); // Uses counter to invoke script once emailData is created matching the number of maxResults
+          };
+        };
+      });
     });
   };
 
