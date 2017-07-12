@@ -1,6 +1,6 @@
 {
   "name": "gmail_cli",
-  "version": "1.0.7",
+  "version": "1.0.6",
   "description": "Gmail Command Line App",
   "bin": {
     "gmail": "./gmail.js"
