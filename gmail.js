@@ -39,6 +39,17 @@ var TOKEN_PATH = TOKEN_DIR + 'gmail-nodejs-quickstart.json';
 // Load client secrets from a local file.
 fs.readFile('client_secret.json', function processClientSecrets(err, content) {
   if (err) {
+    console.log('Welcome to the initial set up for your gmail CLI. Please follow the instructions below:\n\n')
+    console.log('a. Use this link to create or select a project in the Google Developers Console and automatically turn on the API: \n\n https://console.developers.google.com/flows/enableapi?apiid=gmail \n\nClick Continue, then Go to credentials.\n');
+    console.log('b. On the Add credentials to your project page, click the Cancel button.\n');
+    console.log('c. At the top of the page, select the OAuth consent screen tab. Select an Email address, enter a Product name if not already set, and click the Save button.\n');
+    console.log('d. Select the Credentials tab, click the Create credentials button and select OAuth client ID.\n');
+    console.log('e. Select the application type Other, enter the name "Gmail CLI", and click the Create button.\n');
+    console.log('f. Click OK to dismiss the resulting dialog.\n');
+    console.log('g. Click the file_download (Download JSON) button to the right of the client ID.\n');
+    console.log('h. Move this file to the gmail_cli directory and rename it client_secret.json.\n');
+    console.log('i. Restart program.\n\n\n');
+
     console.log('Error loading client secret file: ' + err);
     return;
   } else {
@@ -256,7 +267,7 @@ var ask = function () {
 }
 
 
-console.log('~~~~~~~~~~WELCOME TO GMAIL~~~~~~~~~~\n\n')
+console.log('\n\n~~~~~~~~~~WELCOME TO GMAIL~~~~~~~~~~\n\n')
 
 /**
  *
