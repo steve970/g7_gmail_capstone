@@ -49,7 +49,7 @@ fs.readFile('client_secret.json', function processClientSecrets(err, content) {
     console.log('e. Select the application type Other, enter the name "Gmail CLI", and click the Create button.\n');
     console.log('f. Click OK to dismiss the resulting dialog.\n');
     console.log('g. Click the file_download (Download JSON) button to the right of the client ID.\n');
-    console.log('h. Move this file to the gmail_cli directory and rename it client_secret.json.\n');
+    console.log('h. Move this file to the gmail_cli directory:\n\n /usr/local/lib/node_modules/gmail_cli \n\nand rename it client_secret.json.\n');
     console.log('i. Restart program.\n\n\n');
 
     console.log('Error loading client secret file: ' + err);
