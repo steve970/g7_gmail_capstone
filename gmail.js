@@ -1,18 +1,20 @@
-#!/usr/bin/env node
+const fs = require('fs');
+const readline = require('readline');
+const google = require('googleapis');
+const googleAuth = require('google-auth-library');
 
-var google = require('googleapis');
-var OAuth2 = google.auth.OAuth2;
-var oauth2Client = new OAuth2(process.env['GOOGLE_CLIENT'], process.env['GOOGLE_SECRET'], process.env['GOOGLE_URI']);
-var auth = require('googleauth');
-var gmail = google.gmail({version: 'v1', auth: oauth2Client});
+var gmail;
+
 var chalk = require('chalk');
 
 var atob = require('atob');
 var btoa = require('btoa');
 
-var inquirer = require("inquirer");
+var inquirer = require('inquirer');
 
-var object = {};
+var localSecret = {};
+
+var emailData = {};
 var inboxId = [];
 var emailId;
 var writeEmail = [];
@@ -26,80 +28,221 @@ var deletedEmailId = [];
 var readEmailId = [];
 var replyEmailId = [];
 
-// OAUTH TOKEN EXCHANGE
-var googleAPI = function () {
-  var test = auth({
-    configName: 'googleauth',
-    client_id: process.env['GOOGLE_CLIENT'],
-    client_secret: process.env['GOOGLE_SECRET'],
-    refresh: true,
-    scope: 'https://mail.google.com/',
-    redirect_uri: process.env['GOOGLE_URI'],
-  }, function (err, authData) {
+
+// If modifying these scopes, delete your previously saved credentials
+// at ~/.credentials/gmail-nodejs-quickstart.json
+var SCOPES = ['https://mail.google.com/'];
+var TOKEN_DIR = (process.env.HOME || process.env.HOMEPATH ||
+    process.env.USERPROFILE) + '/.credentials/';
+var TOKEN_PATH = TOKEN_DIR + 'gmail-nodejs-quickstart.json';
+
+// Load client secrets from a local file.
+fs.readFile('client_secret.json', function processClientSecrets(err, content) {
+  if (err) {
+    console.log('Error loading client secret file: ' + err);
+    return;
+  } else {
+    localSecret = JSON.parse(content)
+  }
+
+  // Authorize a client with the loaded credentials, then call the Gmail API.
+  authorize(localSecret, getInbox);
+});
+
+/**
+ * Create an OAuth2 client with the given credentials, and then execute the
+ * given callback function.
+ *
+ * @param {Object} credentials The authorization client credentials.
+ * @param {function} callback The callback to call with the authorized client.
+ */
+function authorize(credentials, callback) {
+  var clientSecret = credentials.installed.client_secret;
+  var clientId = credentials.installed.client_id;
+  var redirectUrl = credentials.installed.redirect_uris[0];
+  var auth = new googleAuth();
+  var oauth2Client = new auth.OAuth2(clientId, clientSecret, redirectUrl);
+
+  // Check if we have previously stored a token.
+  fs.readFile(TOKEN_PATH, function(err, token) {
     if (err) {
-      console.log(err);
+      getNewToken(oauth2Client, callback);
     } else {
-      oauth2Client.setCredentials({
-        access_token: authData.access_token,
-        refresh_token: authData.refresh_token
-      })
-      getInbox();
+      oauth2Client.credentials = JSON.parse(token);
+      callback(oauth2Client);
     }
-  })
+  });
 }
 
-// INVOKES RIGHT AT THE BEGINNING
-googleAPI();
+/**
+ * Get and store new token after prompting for user authorization, and then
+ * execute the given callback with the authorized OAuth2 client.
+ *
+ * @param {google.auth.OAuth2} oauth2Client The OAuth2 client to get token for.
+ * @param {getEventsCallback} callback The callback to call with the authorized
+ *     client.
+ */
 
-// INBOX
-// RETRIEVES INBOX IDS - GMAIL API GET REQUEST
-var getInbox = function () {
-  gmail.users.messages.list({
-    userId: 'me',
-    labelId: 'INBOX',
-    maxResults: maxResults,
-    includeSpamTrash: false,
-    q: "is:unread"
-  }, function (err, req) {
-    for(var i = 0; i < maxResults; i++) {
-      if (inboxId.length < maxResults) {
-        inboxId.push(req.messages[i].id);
-      }
-    }
-    getEmails(inboxId) //Invoked after inboxId array is equal to maxResults variable
+function getNewToken(oauth2Client, callback) {
+  var authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: SCOPES
   });
-};
+  console.log('Authorize this app by visiting this url: ', authUrl);
+  var rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+  rl.question('Enter the code from that page here: ', function(code) {
+    rl.close();
+    oauth2Client.getToken(code, function(err, token) {
+      if (err) {
+        console.log('Error while trying to retrieve access token', err);
+        return;
+      }
+      oauth2Client.credentials = token;
+      storeToken(token);
+      callback(oauth2Client);
+    });
+  });
+}
 
-// RETRIEVES INDIVIDUAL EMAILS AND CREATES AN OBJECT - GMAIL API GET REQUEST
-var getEmails = function(inboxId) {
+/**
+ * Store token to disk be used in later program executions.
+ *
+ * @param {Object} token The token to store to disk.
+ */
+
+function storeToken(token) {
+  try {
+    fs.mkdirSync(TOKEN_DIR);
+  } catch (err) {
+    if (err.code != 'EEXIST') {
+      throw err;
+    }
+  }
+  fs.writeFile(TOKEN_PATH, JSON.stringify(token));
+  console.log('Token stored to ' + TOKEN_PATH);
+}
+
+/**
+ *
+ * @param {google.auth.OAuth2} auth An authorized OAuth2 client.
+ *
+ */
+
+  // INBOX
+  // RETRIEVES INBOX IDS - GMAIL API GET REQUEST
+  var getInbox = function (auth) {
+    gmail = google.gmail({
+      version: 'v1',
+      auth: auth,
+    });
+    gmail.users.messages.list({
+      userId: 'me',
+      labelId: 'INBOX',
+      maxResults: maxResults,
+      includeSpamTrash: false,
+      q: "is:unread"
+    }, function (err, response) {
+      if (err) {
+        throw(err);
+      }
+      for(var i = 0; i < maxResults; i++) {
+        if (inboxId.length < maxResults) {
+          inboxId.push(response.messages[i].id);
+        }
+      }
+      getEmails(auth, inboxId); //Invoked after inboxId array is equal to maxResults variable
+    });
+  };
+
+  // RETRIEVES INDIVIDUAL EMAILS AND CREATES AN OBJECT - GMAIL API GET REQUEST
+  var getEmails = function(auth, inboxId) {
     inboxId.forEach(function(elem, i) {
       gmail.users.messages.get({
         userId: 'me',
         id: elem
-      }, function (err, req) {
-        if(req.payload.body.data === undefined) {
-          object[i] = {id: req.id, subject: req.payload.headers.filter( function(header) {
-            return header.name === 'Subject';
-          })[0].value, threadId: req.threadId, from: req.payload.headers.filter(function(header) {
-            return header.name === 'From';
-          })[0].value, to: req.payload.headers.filter(function(header) {
+      }, function (err, response) {
+        // console.log(response.payload.headers);
+        if(response.payload.body.data === undefined) {
+          emailData[i] = {
+            id: response.id,
+            subject: response.payload.headers.filter( function(header) {
+              return header.name === 'Subject';
+            })[0].value,
+            threadId: response.threadId,
+            from: response.payload.headers.filter( function(header) {
+              return header.name === 'From';
+            })[0].value,
+            to: response.payload.headers.filter(function(header) {
             return header.name === 'To';
-          })[0].value, body: atob(req.payload.parts[0].body.data)}
+            })[0].value,
+            body: atob(response.payload.parts[0].body.data)}
         } else {
-          object[i] = {id: req.id, subject: req.payload.headers.filter( function(header) {
+          emailData[i] = {id: response.id, subject: response.payload.headers.filter( function(header) {
             return header.name === 'Subject';
-          })[0].value, threadId: req.threadId, from: req.payload.headers.filter(function(header) {
+          })[0].value, threadId: response.threadId, from: response.payload.headers.filter(function(header) {
             return header.name === 'From';
-          })[0].value, to: req.payload.headers.filter(function(header) {
+          })[0].value, to: response.payload.headers.filter(function(header) {
             return header.name === 'To';
-          })[0].value, body: atob(req.payload.body.data)}
+          })[0].value, body: atob(response.payload.body.data)}
         };
-      if (Object.keys(object).length === maxResults ) {
-        ask(); // Uses counter to invoke script once object is created matching the number of maxResults
+      if (Object.keys(emailData).length === maxResults ) {
+        // console.log(emailData)
+        ask(); // Uses counter to invoke script once emailData is created matching the number of maxResults
       };
       })
     });
-};
+  };
+
+  //  SEND AN EMAIL - GMAIL API POST REQUEST
+  var sendEmail = function (email) {
+    gmail.users.messages.send({
+      userId: "me",
+      resource: {
+        raw: email
+      }
+    }, function(err, res) {
+      if(err) {
+        console.log("THIS IS A SEND EMAIL ERROR: " + err)
+        throw(err);      }
+    });
+  };
+
+  // DELETE AN EMAIL - GMAIL API POST REQUEST
+  var deleteEmail = function (id) {
+    gmail.users.messages.trash({
+      userId: 'me',
+      'id': id
+    }, function (err, res) {
+      if (err) {
+        console.log("THIS IS A DELETE EMAIL ERROR: " + err)
+        throw(err);      }
+    });
+  }
+
+/**
+ *
+ * @param {google.auth.OAuth2} auth An authorized OAuth2 client.
+ *
+ */
+
+  // CHANGE EMAIL TO READ - GMAIL API POST REQUEST
+  var readEmail = function(id) {
+    gmail.users.messages.modify({
+      userId: 'me',
+      'id': id,
+      resource: {
+        removeLabelIds: ["UNREAD"]
+      }
+    }, function (err, res) {
+      if (err) {
+        console.log("THIS IS A READ EMAIL ERROR: " + err)
+        throw(err);
+      }
+    });
+  };
 
 // INVOKES THE COMMAND LINE SCRIPT
 var ask = function () {
@@ -112,231 +255,201 @@ var ask = function () {
   });
 }
 
-//  SEND AN EMAIL - GMAIL API POST REQUEST
-var sendEmail = function (email) {
-  gmail.users.messages.send({
-    userId: "me",
-    resource: {
-      raw: email
-    }
-  }, function(err, res) {
-    if(err) {
-      sendEmail(email);
-    }
-  });
-};
-
-// DELETE AN EMAIL - GMAIL API POST REQUEST
-var deleteEmail = function (id) {
-  gmail.users.messages.trash({userId: 'me', 'id': id }, function (err, res) {
-    if (err) {
-      deleteEmail(id);
-    }
-  });
-}
-
-// CHANGE EMAIL TO READ - GMAIL API POST REQUEST
-var readEmail = function(id) {
-  gmail.users.messages.modify({
-    userId: 'me',
-    'id': id,
-    resource: {
-      removeLabelIds: ["UNREAD"]
-}}, function (err, res) {
-    if (err) {
-      readEmail(id);
-    }
-  })
-}
 
 console.log('~~~~~~~~~~WELCOME TO GMAIL~~~~~~~~~~\n\n')
 
-// QUESTIONS ARRAY USED IN THE ASK FUNCTION
-var questions = [
-  {
-    type: "list",
-    name: "gmail",
-    message: "Welcome to your inbox, what would you like to do?",
-    choices: ["Read Mail", "Compose", "Log Out"],
-    filter: function(value) {
-      if(value === "Read Mail") {
-        console.log("\nInbox\n\n" + chalk.white.bgRed.bold("Deleted") + "   " + chalk.blue("Read") + "   " + chalk.yellow("Replied") + "\n");
-        for(var i = 0; i < maxResults; i++) {
-          if(deletedEmailId.indexOf(object[i]) !== -1) {
-            console.log(chalk.white.bgRed.bold(i + ' -- ' + 'FROM: ' + object[i].from + "  " + object[i].subject));
-          } else if (readEmailId.indexOf(object[i]) !== -1) {
-            console.log(chalk.blue(i + ' -- ' + 'FROM: ' + object[i].from + "  " + object[i].subject));
-          } else if (replyEmailId.indexOf(object[i]) !== -1) {
-            console.log(chalk.yellow(i + ' -- ' + 'FROM: ' + object[i].from + "  " + object[i].subject));
-          } else {
-            console.log(i + ' -- ' + 'FROM: ' + object[i].from + "  " + object[i].subject);
-          }
-        }
-      };
-      return value.toLowerCase();
-    }
-  },
-  {
-    type: "input",
-    name: "inboxNumber",
-    message: "What would you like to open?    # = READ",
-    choices: ["0","1","2","3","4"],
-    when: function(answer) {
+/**
+ *
+ * @param {google.auth.OAuth2} auth An authorized OAuth2 client.
+ *
+ */
 
-      return answer.gmail === "read mail";
-    },
-    validate: function(value) {
-      var valid = !isNaN(parseInt(value));
-      return valid || "Please enter a number";
-    },
-    filter: function(value) {
-      readEmail(object[value].id);
-      if(readEmailId.indexOf(object[value]) === -1) {
-        readEmailId.push(object[value]);
+  // QUESTIONS ARRAY USED IN THE ASK FUNCTION
+  var questions = [
+    {
+      type: "list",
+      name: "gmail",
+      message: "Welcome to your inbox, what would you like to do?",
+      choices: ["Read Mail", "Compose", "Log Out"],
+      filter: function(value) {
+        if(value === "Read Mail") {
+          console.log("\nInbox\n\n" + chalk.white.bgRed.bold("Deleted") + "   " + chalk.blue("Read") + "   " + chalk.yellow("Replied") + "\n");
+          for(var i = 0; i < maxResults; i++) {
+            if(deletedEmailId.indexOf(emailData[i]) !== -1) {
+              console.log(chalk.white.bgRed.bold(i + ' -- ' + 'FROM: ' + emailData[i].from + "  SUBJECT: " + emailData[i].subject));
+            } else if (readEmailId.indexOf(emailData[i]) !== -1) {
+              console.log(chalk.blue(i + ' -- ' + 'FROM: ' + emailData[i].from + "  SUBJECT: " + emailData[i].subject));
+            } else if (replyEmailId.indexOf(emailData[i]) !== -1) {
+              console.log(chalk.yellow(i + ' -- ' + 'FROM: ' + emailData[i].from + "  SUBJECT: " + emailData[i].subject));
+            } else {
+              console.log(i + ' -- ' + 'FROM: ' + emailData[i].from + "  SUBJECT: " + emailData[i].subject);
+            }
+          }
+        };
+        return value.toLowerCase();
       }
-      return value;
-    }
-  },
-  {
-    type: "list",
-    name: "nextStep",
-    message: "What would you like to do now?",
-    choices: ["Inbox", "Reply", "Delete", "Log Out"],
-    when: function(answer) {
-      if (answer.inboxNumber) {
-        if(typeof parseInt(answer.inboxNumber) == "number"  || 0) {
-          console.log('\nSubject: ' + object[answer.inboxNumber].subject + '\n');
-          console.log('From: ' + object[answer.inboxNumber].from + '\n');
-          console.log('To: ' + object[answer.inboxNumber].to + '\n');
-          console.log(object[answer.inboxNumber].body + '\n');
+    },
+    {
+      type: "input",
+      name: "inboxNumber",
+      message: "What would you like to open?    # = READ",
+      choices: ["0","1","2","3","4"],
+      when: function(answer) {
+
+        return answer.gmail === "read mail";
+      },
+      validate: function(value) {
+        var valid = !isNaN(parseInt(value));
+        return valid || "Please enter a number";
+      },
+      filter: function(value) {
+        readEmail(emailData[value].id);
+        if(readEmailId.indexOf(emailData[value]) === -1) {
+          readEmailId.push(emailData[value]);
         }
-        emailId = parseInt(answer.inboxNumber);
-        return answer.inboxNumber;
+        return value;
       }
     },
-    filter: function(value) {
-      return value;
-    }
-  },
-  {
-    type: "input",
-    name: "recipient",
-    message: "Compose An Email To:",
-    when: function(answer) {
-      return answer.gmail === "compose";
-    },
-    filter: function(value) {
-      recipient = value;
-      return value;
-    }
-  },
-  {
-    type: "input",
-    name: "emailSubject",
-    message: "Email Subject:",
-    when: function(answer) {
-      return answer.recipient;
-    },
-    filter: function(value) {
-      emailSubject = value;
-      return value;
-    }
-  },
-  {
-    type: "input",
-    name: "emailMessage",
-    message: "Write your email:",
-    when: function(answer) {
-      return answer.emailSubject;
-    },
-    filter: function(value) {
-      emailMessage = value + "\n\nSteve\n\n\nSent from my Gmail Command Line App";
-      return value;
-    }
-  },
-  {
-    type: "list",
-    name: "sendMessage",
-    message: "Look good, ready to send?",
-    choices: ["Send", "Trash"],
-    when: function(answer) {
-      if(answer.emailMessage) {
-        console.log("From: me\r\nTo:" + recipient + "\r\nSubject:"+ emailSubject + "\r\n\r\n" + emailMessage);
-        btoaEmail = btoa("From: me\r\nTo:" + recipient + "\r\nSubject:"+ emailSubject + "\r\n\r\n" + emailMessage).replace(/\//g,'_').replace(/\+/g,'-');
-        return answer.emailMessage;
+    {
+      type: "list",
+      name: "nextStep",
+      message: "What would you like to do now?",
+      choices: ["Inbox", "Reply", "Delete", "Log Out"],
+      when: function(answer) {
+        if (answer.inboxNumber) {
+          if(typeof parseInt(answer.inboxNumber) == "number"  || 0) {
+            console.log('\nSubject: ' + emailData[answer.inboxNumber].subject + '\n');
+            console.log('From: ' + emailData[answer.inboxNumber].from + '\n');
+            console.log('To: ' + emailData[answer.inboxNumber].to + '\n');
+            console.log(emailData[answer.inboxNumber].body + '\n');
+          }
+          emailId = parseInt(answer.inboxNumber);
+          return answer.inboxNumber;
+        }
+      },
+      filter: function(value) {
+        return value;
       }
     },
-    filter: function(value) {
-      if(value === "Send") {
-        sendEmail(btoaEmail);
-      }
-      return value;
-    }
-  },
-  {
-    type: "list",
-    name: "deleteEmail",
-    message: "Delete Email?",
-    choices: ["Yes", "No"],
-    when: function(answer) {
-      return answer.nextStep === "Delete";
-    },
-    filter: function(value) {
-      deletedEmailId.push(object[emailId]);
-      deleteEmail(object[emailId].id);
-      return value;
-    }
-  },
-  {
-    type: "input",
-    name: "replyMessage",
-    message: "Reply Message:",
-    when: function(answer) {
-      return answer.nextStep === "Reply"
-    },
-    filter: function(value) {
-      emailMessage = value + "\n\nSteve\n\n\nSent from my Gmail Command Line App";
-      return value;
-    }
-  },
-  {
-    type: "list",
-    name: "sendReply",
-    message: "Look good, ready to send?",
-    choices: ["Send", "Trash"],
-    when: function(answer) {
-      if(answer.replyMessage) {
-        console.log("From: me\r\nTo:" + object[emailId].from + "\r\nSubject: Re:"+ object[emailId].subject + "\r\n\r\n" + emailMessage);
-        btoaEmail = btoa("From: me\r\nTo:" + object[emailId].from + "\r\nSubject: Re:"+ object[emailId].subject + "\r\n\r\n" + emailMessage).replace(/\//g,'_').replace(/\+/g,'-');
-        return answer.replyMessage;
+    {
+      type: "input",
+      name: "recipient",
+      message: "Compose An Email To:",
+      when: function(answer) {
+        return answer.gmail === "compose";
+      },
+      filter: function(value) {
+        recipient = value;
+        return value;
       }
     },
-    filter: function(value) {
-      if(value === "Send") {
-        sendEmail(btoaEmail);
-        var test = readEmailId.indexOf(object[emailId]);
-        readEmailId.splice(test, 1);
-        replyEmailId.push(object[emailId]);
+    {
+      type: "input",
+      name: "emailSubject",
+      message: "Email Subject:",
+      when: function(answer) {
+        return answer.recipient;
+      },
+      filter: function(value) {
+        emailSubject = value;
+        return value;
       }
-      return value;
+    },
+    {
+      type: "input",
+      name: "emailMessage",
+      message: "Write your email:",
+      when: function(answer) {
+        return answer.emailSubject;
+      },
+      filter: function(value) {
+        emailMessage = value + "\n\nSteve\n\n\nSent from my Gmail Command Line App";
+        return value;
+      }
+    },
+    {
+      type: "list",
+      name: "sendMessage",
+      message: "Look good, ready to send?",
+      choices: ["Send", "Trash"],
+      when: function(answer) {
+        if(answer.emailMessage) {
+          console.log("From: me\r\nTo:" + recipient + "\r\nSubject:"+ emailSubject + "\r\n\r\n" + emailMessage);
+          btoaEmail = btoa("From: me\r\nTo:" + recipient + "\r\nSubject:"+ emailSubject + "\r\n\r\n" + emailMessage).replace(/\//g,'_').replace(/\+/g,'-');
+          return answer.emailMessage;
+        }
+      },
+      filter: function(value) {
+        if(value === "Send") {
+          sendEmail(btoaEmail);
+        }
+        return value;
+      }
+    },
+    {
+      type: "list",
+      name: "deleteEmail",
+      message: "Delete Email?",
+      choices: ["Yes", "No"],
+      when: function(answer) {
+        return answer.nextStep === "Delete";
+      },
+      filter: function(value) {
+        deletedEmailId.push(emailData[emailId]);
+        deleteEmail(emailData[emailId].id);
+        return value;
+      }
+    },
+    {
+      type: "input",
+      name: "replyMessage",
+      message: "Reply Message:",
+      when: function(answer) {
+        return answer.nextStep === "Reply"
+      },
+      filter: function(value) {
+        emailMessage = value + "\n\nSteve\n\n\nSent from my Gmail Command Line App";
+        return value;
+      }
+    },
+    {
+      type: "list",
+      name: "sendReply",
+      message: "Look good, ready to send?",
+      choices: ["Send", "Trash"],
+      when: function(answer) {
+        if(answer.replyMessage) {
+          console.log("From: me\r\nTo:" + emailData[emailId].from + "\r\nSubject: Re:"+ emailData[emailId].subject + "\r\n\r\n" + emailMessage);
+          btoaEmail = btoa("From: me\r\nTo:" + emailData[emailId].from + "\r\nSubject: Re:"+ emailData[emailId].subject + "\r\n\r\n" + emailMessage).replace(/\//g,'_').replace(/\+/g,'-');
+          return answer.replyMessage;
+        }
+      },
+      filter: function(value) {
+        if(value === "Send") {
+          sendEmail(btoaEmail);
+          var test = readEmailId.indexOf(emailData[emailId]);
+          readEmailId.splice(test, 1);
+          replyEmailId.push(emailData[emailId]);
+        }
+        return value;
+      }
+    },
+    {
+      type: "list",
+      name: "nextStepAfterComposing",
+      message: "What would you like to do now?",
+      choices: ["Inbox", "Log Out"],
+      when: function(answer) {
+        return answer.sendMessage;
+      }
+    },
+    {
+      type: "list",
+      name: "nextStepAfterReplying",
+      message: "What would you like to do now?",
+      choices: ["Inbox", "Log Out"],
+      when: function(answer) {
+        return answer.sendReply;
+      }
     }
-  },
-  {
-    type: "list",
-    name: "nextStepAfterComposing",
-    message: "What would you like to do now?",
-    choices: ["Inbox", "Log Out"],
-    when: function(answer) {
-      return answer.sendMessage;
-    }
-  },
-  {
-    type: "list",
-    name: "nextStepAfterReplying",
-    message: "What would you like to do now?",
-    choices: ["Inbox", "Log Out"],
-    when: function(answer) {
-      return answer.sendReply;
-    }
-  }
-];
+  ];
