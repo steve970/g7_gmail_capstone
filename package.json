@@ -3,10 +3,9 @@
   "version": "1.0.7",
   "description": "Gmail Command Line App",
   "bin": {
-    "gmail": "./gmail.js"
+    "gmail": "bin/run.js"
   },
   "main": "gmail.js",
-  "scripts": {},
   "author": "Steve Hirschhorn",
   "license": "ISC",
   "dependencies": {
